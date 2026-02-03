@@ -7,7 +7,7 @@ st.set_page_config(page_title="Collaborative Registry", layout="wide")
 
 # 1. Connect to Google Sheets
 # You will need to add your Sheet URL in the Streamlit Secrets or sidebar for now
-url = "https://docs.google.com/spreadsheets/d/1gyvI0dbvox31fCBAWkpxXTYGDmlL53Lyght3Yy1KkzQ/edit?usp=sharing"
+url = "https://docs.google.com/spreadsheets/d/1gyvI0dbvox31fCBAWkpxXTYGDmlL53lYght3Yy1KkzQ/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # Fetch existing data
@@ -83,4 +83,5 @@ if not data.empty:
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1')
         st.download_button("📥 Download Cloud PDF", pdf_bytes, "cloud_registry.pdf")
+
 
