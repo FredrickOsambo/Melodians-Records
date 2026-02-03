@@ -1,92 +1,85 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from fpdf import FPDF
 
-st.set_page_config(page_title="Batch Registration", layout="wide")
+st.set_page_config(page_title="Collaborative Registry", layout="wide")
 
-# 1. Initialize Session State
-if 'student_list' not in st.session_state:
-    st.session_state.student_list = []
+# 1. Connect to Google Sheets
+# You will need to add your Sheet URL in the Streamlit Secrets or sidebar for now
+url = https://docs.google.com/spreadsheets/d/1gyvI0dbvox31fCBAWkpxXTYGDmlL53lYght3Yy1KkzQ/edit?usp=sharing
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-st.title("👥 Multi-Student Data Collection")
+# Fetch existing data
+data = conn.read(spreadsheet=url, usecols=[0,1,2,3])
+data = data.dropna(how="all") # Clean empty rows
+
+st.title("🌐 Live Collaborative Registry")
+st.info("Data is saved instantly to Google Sheets. All users see the same list.")
 
 # 2. Input Section
-with st.expander("➕ Add New Entry", expanded=True):
+with st.expander("➕ Add New Entry"):
     with st.form("entry_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            first_name = st.text_input("First Name")
-            family_size = st.selectbox("Family Members", options=[1, 2, 3, 4, 5])
+            name = st.text_input("First Name")
+            family = st.selectbox("Family Members", options=[1, 2, 3, 4, 5])
         with col2:
             residence = st.text_input("Residence")
             course = st.selectbox("Course", ["Computer Science", "Data Science", "AI", "Business"])
         
-        add_person = st.form_submit_button("Add to List")
+        submit = st.form_submit_button("Save to Cloud")
 
-if add_person:
-    if first_name and residence:
-        new_entry = {
-            "First Name": first_name,
-            "Family": family_size,
+if submit:
+    if name and residence:
+        # Create new row
+        new_row = pd.DataFrame([{
+            "Name": name,
+            "Family": family,
             "Residence": residence,
             "Course": course
-        }
-        st.session_state.student_list.append(new_entry)
-        st.rerun() # Refresh to show the new table entry immediately
+        }])
+        # Append to existing data and update sheet
+        updated_df = pd.concat([data, new_row], ignore_index=True)
+        conn.update(spreadsheet=url, data=updated_df)
+        st.success("Saved to Cloud!")
+        st.rerun()
 
-# 3. Table and Management Section
-if st.session_state.student_list:
-    st.subheader("Current Registry")
-    
-    # Create DataFrame with an Index starting at 1 for readability
-    df = pd.DataFrame(st.session_state.student_list)
-    df.index = df.index + 1 
-    st.table(df)
+# 3. Display Data
+if not data.empty:
+    st.subheader("Current Database")
+    st.table(data)
 
-    # --- DELETE FUNCTIONALITY ---
-    col_del1, col_del2 = st.columns([1, 3])
-    with col_del1:
-        row_to_delete = st.number_input("Enter Row Number to Delete", 
-                                        min_value=1, 
-                                        max_value=len(st.session_state.student_list), 
-                                        step=1)
-        if st.button("❌ Remove Entry"):
-            # Subtract 1 because list index starts at 0, but our display index starts at 1
-            st.session_state.student_list.pop(int(row_to_delete) - 1)
-            st.toast(f"Removed entry #{row_to_delete}")
-            st.rerun()
+    # 4. Delete Specific Row
+    row_to_del = st.number_input("Row to delete", min_value=1, max_value=len(data), step=1)
+    if st.button("🗑️ Delete Entry"):
+        data = data.drop(data.index[int(row_to_del) - 1])
+        conn.update(spreadsheet=url, data=data)
+        st.rerun()
 
-    # 4. PDF Generation
-    if st.button("📄 Export All to PDF"):
+    # 5. PDF Generation
+    if st.button("📄 Export Cloud Data to PDF"):
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, txt="Student Collection Report", ln=True, align='C')
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, "Shared Registry Report", ln=True, align='C')
         pdf.ln(10)
+        
+        # Header
+        pdf.set_font("Arial", 'B', 10)
+        cols = ["Name", "Family", "Residence", "Course"]
+        for col in cols:
+            pdf.cell(45, 10, col, 1)
+        pdf.ln()
 
-        # Table Header
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(10, 10, "#", 1)
-        pdf.cell(45, 10, "Name", 1)
-        pdf.cell(25, 10, "Family", 1)
-        pdf.cell(55, 10, "Residence", 1)
-        pdf.cell(55, 10, "Course", 1, ln=True)
-
-        # Table Rows
+        # Data rows
         pdf.set_font("Arial", size=10)
-        for i, person in enumerate(st.session_state.student_list):
-            pdf.cell(10, 10, str(i+1), 1)
-            pdf.cell(45, 10, person["First Name"], 1)
-            pdf.cell(25, 10, str(person["Family"]), 1)
-            pdf.cell(55, 10, person["Residence"], 1)
-            pdf.cell(55, 10, person["Course"], 1, ln=True)
+        for _, row in data.iterrows():
+            pdf.cell(45, 10, str(row['Name']), 1)
+            pdf.cell(45, 10, str(row['Family']), 1)
+            pdf.cell(45, 10, str(row['Residence']), 1)
+            pdf.cell(45, 10, str(row['Course']), 1)
+            pdf.ln()
 
-        pdf_output = pdf.output(dest='S').encode('latin-1')
-        st.download_button(
-            label="📥 Download PDF Table",
-            data=pdf_output,
-            file_name="student_registry.pdf",
-            mime="application/pdf"
-        )
-else:
-    st.info("No entries yet. Add someone above!")
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        st.download_button("📥 Download Cloud PDF", pdf_bytes, "cloud_registry.pdf")
